@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en" >
+<head>
+  <meta charset="UTF-8">
+  <title>שעון עבודה</title>
+  
+
+</head>
+<body>
+<!-- partial:index.partial.html -->
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>שעון עבודה</title>
+
+  <!-- React ו-ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <!-- Babel לפירוש JSX -->
+  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+
+  <style>
+    body {
+      font-family: sans-serif;
+      direction: rtl;
+      margin: 20px;
+      text-align: right;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .btn {
+      background: #007bff;
+      color: #fff;
+      border: none;
+      padding: 6px 12px;
+      margin: 2px;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+    .btn-secondary {
+      background: #6c757d;
+    }
+    .error {
+      color: red;
+      font-weight: bold;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 8px;
+    }
+    .warning {
+      color: red;
+      font-weight: bold;
+      margin-top: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    function exportToCSV(records) {
+      if (!records || records.length === 0) {
+        alert("אין נתונים לייצוא");
+        return;
+      }
+      const headers = ["תאריך", "שם לקוח", "תיאור העבודה", "משעה עד שעה", "משך זמן"];
+      const csvRows = [headers.join(",")];
+
+      records.forEach((rec) => {
+        const intervalsString = rec.intervals.join(" | ");
+        const rowData = [
+          rec.date || "",
+          rec.clientName || "",
+          rec.workDescription || "",
+          intervalsString,
+          rec.duration || ""
+        ];
+        csvRows.push(rowData.map(val => `"${val}"`).join(","));
+      });
+
+      const csvString = csvRows.join("\n");
+      const blob = new Blob([csvString], { type: "text/csv" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "timesheet.csv";
+      link.click();
+      window.URL.revokeObjectURL(url);
+    }
+
+    function formatTime(ms) {
+      const totalSeconds = Math.floor(ms / 1000);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      return `${String(hours).padStart(2,'0')}:${String(minutes).padStart(2,'0')}:${String(seconds).padStart(2,'0')}`;
+    }
+
+    function formatHourMinute(dateObj) {
+      const hh = String(dateObj.getHours()).padStart(2, '0');
+      const mm = String(dateObj.getMinutes()).padStart(2, '0');
+      return `${hh}:${mm}`;
+    }
+
+    function App() {
+      const [isRunning, setIsRunning] = React.useState(false);
+      const [isPaused, setIsPaused] = React.useState(false);
+      const [time, setTime] = React.useState(0);
+      const [intervals, setIntervals] = React.useState([]);
+      const timerRef = React.useRef(null);
+
+      const [clientName, setClientName] = React.useState("");
+      const [workDescription, setWorkDescription] = React.useState("");
+      const [errorMsg, setErrorMsg] = React.useState("");
+
+      const [records, setRecords] = React.useState(() => {
+        const saved = localStorage.getItem("workClockRecords");
+        return saved ? JSON.parse(saved) : [];
+      });
+      const [searchTerm, setSearchTerm] = React.useState("");
+
+      React.useEffect(() => {
+        localStorage.setItem("workClockRecords", JSON.stringify(records));
+      }, [records]);
+
+      React.useEffect(() => {
+        if (isRunning && !isPaused) {
+          timerRef.current = setInterval(() => setTime(t => t + 1000), 1000);
+        } else {
+          clearInterval(timerRef.current);
+        }
+        return () => clearInterval(timerRef.current);
+      }, [isRunning, isPaused]);
+
+      function handleStart() {
+        if (!isRunning) {
+          setIntervals([{ start: new Date(), end: null }]);
+          setTime(0);
+        }
+        setIsRunning(true);
+        setIsPaused(false);
+        setErrorMsg("");
+      }
+
+      function handlePause() {
+        if (isRunning && !isPaused) {
+          setIntervals(prev => {
+            const updated = [...prev];
+            const last = updated[updated.length - 1];
+            if (last && !last.end) {
+              last.end = new Date();
+            }
+            return updated;
+          });
+          setIsPaused(true);
+        }
+      }
+
+      function handleResume() {
+        if (isRunning && isPaused) {
+          setIntervals(prev => [...prev, { start: new Date(), end: null }]);
+          setIsPaused(false);
+        }
+      }
+
+      function handleStop() {
+        setIsRunning(false);
+        setIsPaused(false);
+        setTime(0);
+        setIntervals([]);
+        setErrorMsg("");
+      }
+
+      function handleFinish() {
+        if (!clientName.trim() || !workDescription.trim()) {
+          setErrorMsg("יש למלא שם לקוח ותיאור עבודה לפני סיום.");
+          return;
+        }
+        if (!isRunning) {
+          alert("השעון לא פועל, אין מה לסיים.");
+          return;
+        }
+
+        setIntervals(prev => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          if (last && !last.end) {
+            last.end = new Date();
+          }
+          return updated;
+        });
+
+        clearInterval(timerRef.current);
+        setIsRunning(false);
+        setIsPaused(false);
+
+        setTimeout(() => {
+          const now = new Date();
+          const finalIntervals = intervals.map(i => ({
+            start: i.start,
+            end: i.end || now
+          }));
+          const durationMs = finalIntervals.reduce((acc, i) => acc + (i.end - i.start), 0);
+          const intervalsStr = finalIntervals.map(i => (
+            `${formatHourMinute(i.start)} - ${formatHourMinute(i.end)}`
+          ));
+
+          const newRecord = {
+            id: Date.now(),
+            clientName,
+            workDescription,
+            intervals: intervalsStr,
+            duration: formatTime(durationMs),
+            date: now.toLocaleDateString('he-IL')
+          };
+
+          setRecords(prev => [...prev, newRecord]);
+          setTime(0);
+          setClientName("");
+          setWorkDescription("");
+          setIntervals([]);
+        }, 50);
+      }
+
+      const filteredRecords = React.useMemo(() => {
+        return records.filter(r =>
+          (r.clientName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (r.workDescription || "").toLowerCase().includes(searchTerm.toLowerCase())
+        );
+      }, [records, searchTerm]);
+
+      function handleExportFiltered() {
+        exportToCSV(filteredRecords);
+      }
+
+      return (
+        <div className="container">
+          <h1>שעון עבודה</h1>
+          <p>זמן נוכחי: {formatTime(time)}</p>
+          <div>
+            <button className="btn" onClick={handleStart}>התחל</button>
+            <button className="btn" onClick={handlePause}>הפסק</button>
+            <button className="btn" onClick={handleResume}>המשך</button>
+            <button className="btn" onClick={handleFinish}>סיום</button>
+            <button className="btn" onClick={handleStop}>איפוס</button>
+          </div>
+
+          <hr />
+
+          <h3>פרטי לקוח ותיאור עבודה</h3>
+          <input
+            style={{width:'100%'}}
+            placeholder="שם לקוח"
+            value={clientName}
+            onChange={e => setClientName(e.target.value)}
+          />
+          <br /><br />
+          <textarea
+            style={{width:'100%'}}
+            rows="4"
+            placeholder="תיאור העבודה"
+            value={workDescription}
+            onChange={e => setWorkDescription(e.target.value)}
+          />
+          {errorMsg && <div className="error">{errorMsg}</div>}
+
+          <hr />
+          <h3>חיפוש</h3>
+          <input
+            style={{width:'100%'}}
+            placeholder="חפש לקוח או תיאור..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+          />
+
+          <table>
+            <thead>
+              <tr>
+                <th>תאריך</th>
+                <th>שם לקוח</th>
+                <th>תיאור העבודה</th>
+                <th>משעה עד שעה</th>
+                <th>משך זמן</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRecords.map((rec) => (
+                <tr key={rec.id}>
+                  <td>{rec.date}</td>
+                  <td>{rec.clientName}</td>
+                  <td>{rec.workDescription}</td>
+                  <td>{rec.intervals.join(", ")}</td>
+                  <td>{rec.duration}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div style={{marginTop:'10px'}}>
+            <button className="btn" onClick={() => exportToCSV(records)}>
+              ייצא את כל הרשומות (CSV)
+            </button>
+            <button className="btn" onClick={handleExportFiltered}>
+              ייצא רשומות מהחיפוש (CSV)
+            </button>
+          </div>
+
+          <p className="warning">
+            שים לב: ניקוי נתוני גלישה מוחק את הרשומות. יש לבצע ייצוא לפני מחיקה!
+          </p>
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById("root"));
+  </script>
+</body>
+</html>
+<!-- partial -->
+  
+</body>
+</html>
